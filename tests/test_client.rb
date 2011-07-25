@@ -4,7 +4,7 @@ require 'test/unit'
 class TestClient < Test::Unit::TestCase
   
   def setup
-    @url = "http://saio.scottic.us:8080/auth/v1.0"
+    @url = "http://127.0.0.1:8080/auth/v1.0"
     @user = "test:tester"
     @key = "testing"
     @auth = get_auth(@url, @user, @key)
