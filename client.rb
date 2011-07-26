@@ -3,7 +3,61 @@ require 'uri'
 require 'net/http'
 require 'json'
 
-class ClientException<Exception
+class ClientException < Exception
+  attr_reader :scheme, :host, :port, :path, :query, :status, :reason, :devices
+  def initialize(msg, params={})
+    @msg     = msg
+    @scheme  = params[:http_scheme]
+    @host    = params[:http_host]
+    @port    = params[:http_port]
+    @path    = params[:http_path]
+    @query   = params[:http_query]
+    @status  = params[:http_status]
+    @reason  = params[:http_reason]
+    @device  = params[:http_device]
+    
+    def to_s
+      a = @msg
+      b = ''
+      if @scheme
+        b += "#{@scheme}://"
+      end
+      if @host
+        b += @host
+      end
+      if @port
+        b +=  ":#{@port}"
+      end
+      if @path
+        b += @path
+      end
+      if @query
+        b += "?#{@query}"
+      end
+      if @status
+        if b
+          b = "#{b} #{@status}"
+        else
+          b = @status.to_s
+        end
+      end
+      if @reason
+        if b
+          b = "#{b} #{@reason}"
+        else
+          b = "- #{@reason}"
+        end
+      end
+      if @device
+        if b
+          b = "#{b}: device #{@device}"
+        else
+          b = "device #{@device}"
+        end
+      end
+      b ? "#{a} #{b}" : a
+    end
+  end
 end
 
 def quote(value)
@@ -20,7 +74,7 @@ def http_connection(url)
     conn.verify_mode = OpenSSL::SSL::VERIFY_NONE
     [parsed, conn]
   else
-    raise ClientException
+    raise ClientException.new("Cannot handle protocol scheme #{parsed.scheme} for #{url} %s")
   end
 end
 
@@ -55,8 +109,10 @@ def get_account(url, token, marker=nil, limit=nil, prefix=nil, http_conn=nil, fu
     resp_headers[k.downcase] = v
   end
   if resp.code.to_i < 200 or resp.code.to_i > 300
-    #todo: add more exception info
-    raise ClientException
+    raise ClientException.new('Account GET failed', :http_scheme=>parsed.scheme,
+                :http_host=>conn.address, :http_port=>conn.port,
+                :http_path=>parsed.path, :http_query=>parsed.query, :http_status=>resp.code,
+                :http_reason=>resp.message)
   end
   if resp.code.to_i == 204
     [resp_headers, []]
@@ -77,8 +133,10 @@ def head_account(url, token, http_conn=nil)
     resp_headers[k.downcase] = v
   end
   if resp.code.to_i < 200 or resp.code.to_i > 300
-    #todo: add more exception info
-    raise ClientException
+    raise ClientException.new('Account HEAD failed', :http_scheme=>parsed.scheme,
+                :http_host=>conn.address, :http_port=>conn.port,
+                :http_path=>parsed.path, :http_status=>resp.code,
+                :http_reason=>resp.message)
   end
   resp_headers
 end
@@ -93,8 +151,10 @@ def post_account(url, token, headers, http_conn=nil)
   resp = conn.post(parsed.request_uri, nil, headers)
   resp.body
   if resp.code.to_i < 200 or resp.code.to_i > 300
-    #todo: add more exception info
-    raise ClientException
+    raise ClientException.new('Account POST failed', :http_scheme=>parsed.scheme,
+                :http_host=>conn.address, :http_port=>conn.port,
+                :http_path=>parsed.path, :http_status=>resp.code,
+                :http_reason=>resp.message)
   end
 end
 
@@ -117,8 +177,10 @@ def get_container(url, token, container, marker=nil, limit=nil, prefix=nil, deli
     resp_headers[k.downcase] = v
   end
   if resp.code.to_i < 200 or resp.code.to_i > 300
-    #todo: add more exception info
-    raise ClientException
+    raise ClientException.new('Container GET failed', :http_scheme=>parsed.scheme,
+                :http_host=>conn.address, :http_port=>conn.port,
+                :http_path=>parsed.path, :http_query=>parsed.query, :http_status=>resp.code,
+                :http_reason=>resp.message)
   end
   if resp.code.to_i == 204:
     [resp_headers, []]
@@ -140,8 +202,10 @@ def head_container(url, token, container, http_conn=nil)
     resp_headers[k.downcase] = v
   end
   if resp.code.to_i < 200 or resp.code.to_i > 300
-    #todo: add more exception info
-    raise ClientException
+    raise ClientException.new('Container HEAD failed', :http_scheme=>parsed.scheme,
+                :http_host=>conn.address, :http_port=>conn.port,
+                :http_path=>parsed.path, :http_status=>resp.code,
+                :http_reason=>resp.message)
   end
   resp_headers
 end
@@ -156,8 +220,10 @@ def put_container(url, token, container, headers={}, http_conn=nil)
   headers['x-auth-token'] = token
   resp = conn.put(parsed.request_uri, nil, headers)
   if resp.code.to_i < 200 or resp.code.to_i > 300
-    #todo: add more exception info
-    raise ClientException
+    raise ClientException.new('Container PUT failed', :http_scheme=>parsed.scheme,
+                :http_host=>conn.address, :http_port=>conn.port,
+                :http_path=>parsed.path, :http_status=>resp.code,
+                :http_reason=>resp.message)  
   end
 end
 
@@ -171,8 +237,10 @@ def post_container(url, token, container, headers={}, http_conn=nil)
   headers['x-auth-token'] = token
   resp = conn.post(parsed.request_uri, nil, headers)
   if resp.code.to_i < 200 or resp.code.to_i > 300
-    #todo: add more exception info
-    raise ClientException
+    raise ClientException.new('Container POST failed', :http_scheme=>parsed.scheme,
+                :http_host=>conn.address, :http_port=>conn.port,
+                :http_path=>parsed.path, :http_status=>resp.code,
+                :http_reason=>resp.message)
   end
 end
 
@@ -185,7 +253,9 @@ def delete_container(url, token, container, http_conn=nil)
   parsed.path += "/#{quote(container)}"
   resp = conn.delete(parsed.request_uri, {'x-auth-token' => token})
   if resp.code.to_i < 200 or resp.code.to_i > 300
-    #todo: add more exception info
-    raise ClientException
+    raise ClientException.new('Container DELETE failed', :http_scheme=>parsed.scheme,
+                :http_host=>conn.address, :http_port=>conn.port,
+                :http_path=>parsed.path, :http_status=>resp.code,
+                :http_reason=>resp.message)
   end
 end

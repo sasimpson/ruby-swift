@@ -55,7 +55,7 @@ class TestClient < Test::Unit::TestCase
   end
   
   def test_get_container
-    assert_raise ClientException do 
+    assert_raises ClientException do 
       container = get_container(@storage_url, @auth_token, 'no-container')
     end
     put_container(@storage_url, @auth_token, 'test_get_container', {'x-container-meta-get-container-header' => 'testing'})
@@ -66,7 +66,7 @@ class TestClient < Test::Unit::TestCase
   end
   
   def test_head_container
-    assert_raise ClientException do 
+    assert_raises ClientException do 
       container = head_container(@storage_url, @auth_token, 'no-container')
     end
     put_container(@storage_url, @auth_token, 'test_head_container', {'x-container-meta-head-container-header' => 'testing'})
@@ -98,7 +98,7 @@ class TestClient < Test::Unit::TestCase
     container = head_container(@storage_url, @auth_token, 'test_delete_container')
     assert_not_nil(container)
     delete_container(@storage_url, @auth_token, 'test_delete_container')
-    assert_raise ClientException do
+    assert_raises ClientException do
       container = head_container(@storage_url, @auth_token, 'test_delete_container')
     end
   end
