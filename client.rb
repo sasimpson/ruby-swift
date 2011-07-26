@@ -1,5 +1,7 @@
+require 'rubygems'
 require 'uri'
 require 'net/http'
+require 'json'
 
 class ClientException<Exception
 end
@@ -25,7 +27,7 @@ end
 def get_auth(url, user, key, snet=false)
   parsed, conn = http_connection(url)
   conn.start
-  resp = conn.get(parsed.path, { "x-auth-user" => user, "x-auth-key" => key })
+  resp = conn.get(parsed.request_uri, { "x-auth-user" => user, "x-auth-key" => key })
   
   if resp.code.to_i < 200 or resp.code.to_i > 300
     raise ClientException
@@ -47,7 +49,7 @@ def get_account(url, token, marker=nil, limit=nil, prefix=nil, http_conn=nil, fu
     parsed.query = "#{parsed.query}&format=json"
   end
   conn.start
-  resp = conn.get(parsed.path, {'x-auth-token' => token})
+  resp = conn.get(parsed.request_uri, {'x-auth-token' => token})
   resp_headers = {}
   resp.header.each do |k,v|
     resp_headers[k.downcase] = v
@@ -59,7 +61,7 @@ def get_account(url, token, marker=nil, limit=nil, prefix=nil, http_conn=nil, fu
   if resp.code.to_i == 204
     [resp_headers, []]
   else
-    [resp_headers, resp.body]
+    [resp_headers, JSON.parse(resp.body)]
   end
 end
 
@@ -69,7 +71,7 @@ def head_account(url, token, http_conn=nil)
   end
   parsed, conn = http_conn
   conn.start
-  resp = conn.head(parsed.path, {'x-auth-token' => token})
+  resp = conn.head(parsed.request_uri, {'x-auth-token' => token})
   resp_headers = {}
   resp.header.each do |k,v|
     resp_headers[k.downcase] = v
@@ -88,9 +90,9 @@ def post_account(url, token, headers, http_conn=nil)
   parsed, conn = http_conn
   headers['x-auth-token'] = token
   conn.start
-  resp = conn.post(parsed.path, nil, headers)
+  resp = conn.post(parsed.request_uri, nil, headers)
   resp.body
-  if resp.code.to_i < 200 or resp.code.to_i > 300:
+  if resp.code.to_i < 200 or resp.code.to_i > 300
     #todo: add more exception info
     raise ClientException
   end
@@ -107,23 +109,83 @@ def get_container(url, token, container, marker=nil, limit=nil, prefix=nil, deli
   else
     parsed.query = "#{parsed.query}&format=json"
   end
-  
   conn.start
-  resp = conn.get("#{parsed.path}/#{quote(container)}", {'x-auth-token' => token})
+  parsed.path += "/#{quote(container)}"
+  resp = conn.get(parsed.request_uri, {'x-auth-token' => token})
   resp_headers = {}
   resp.header.each do |k,v|
     resp_headers[k.downcase] = v
   end
-  if resp.code.to_i < 200 or resp.code.to_i > 300:
+  if resp.code.to_i < 200 or resp.code.to_i > 300
     #todo: add more exception info
     raise ClientException
   end
   if resp.code.to_i == 204:
     [resp_headers, []]
   else
-    [resp_headers, resp.body()]
+    [resp_headers, JSON.parse(resp.body())]
   end
 end
 
-def head_container(url, token, container, http_conn=None)
+def head_container(url, token, container, http_conn=nil)
+  if not http_conn
+    http_conn = http_connection(url)
+  end
+  parsed, conn = http_conn
+  conn.start
+  parsed.path += "/#{quote(container)}"
+  resp = conn.head(parsed.request_uri, {'x-auth-token' => token})
+  resp_headers = {}
+  resp.header.each do |k,v|
+    resp_headers[k.downcase] = v
+  end
+  if resp.code.to_i < 200 or resp.code.to_i > 300
+    #todo: add more exception info
+    raise ClientException
+  end
+  resp_headers
+end
+
+def put_container(url, token, container, headers={}, http_conn=nil)
+  if not http_conn
+    http_conn = http_connection(url)
+  end
+  parsed, conn = http_conn
+  conn.start
+  parsed.path += "/#{quote(container)}"
+  headers['x-auth-token'] = token
+  resp = conn.put(parsed.request_uri, nil, headers)
+  if resp.code.to_i < 200 or resp.code.to_i > 300
+    #todo: add more exception info
+    raise ClientException
+  end
+end
+
+def post_container(url, token, container, headers={}, http_conn=nil)
+  if not http_conn
+    http_conn = http_connection(url)
+  end
+  parsed, conn = http_conn
+  conn.start
+  parsed.path += "/#{quote(container)}"
+  headers['x-auth-token'] = token
+  resp = conn.post(parsed.request_uri, nil, headers)
+  if resp.code.to_i < 200 or resp.code.to_i > 300
+    #todo: add more exception info
+    raise ClientException
+  end
+end
+
+def delete_container(url, token, container, http_conn=nil)
+  if not http_conn
+    http_conn = http_connection(url)
+  end
+  parsed, conn = http_conn
+  conn.start
+  parsed.path += "/#{quote(container)}"
+  resp = conn.delete(parsed.request_uri, {'x-auth-token' => token})
+  if resp.code.to_i < 200 or resp.code.to_i > 300
+    #todo: add more exception info
+    raise ClientException
+  end
 end
