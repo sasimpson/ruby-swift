@@ -86,13 +86,15 @@ def get_auth(url, user, key, snet=false)
   if resp.code.to_i < 200 or resp.code.to_i > 300
     raise ClientException
   end
-  url = resp.header['x-storage-url']
-  #todo: snet
-  
-  [url, resp.header['x-storage-token'], resp.header['x-auth-token']]
+  url = URI::parse(resp.header['x-storage-url'])
+  if snet:
+    url.host = "snet-#{url.host}"
+  end
+  [url.to_s, resp.header['x-storage-token'], resp.header['x-auth-token']]
 end
 
 def get_account(url, token, marker=nil, limit=nil, prefix=nil, http_conn=nil, full_listing=false)
+  #todo: add in rest of functionality
   if not http_conn
     http_conn = http_connection(url)
   end
@@ -159,6 +161,7 @@ def post_account(url, token, headers, http_conn=nil)
 end
 
 def get_container(url, token, container, marker=nil, limit=nil, prefix=nil, delimiter=nil, http_conn=nil, full_listing=nil)
+  #todo: add in rest of functionality
   if not http_conn
     http_conn = http_connection(url)
   end
