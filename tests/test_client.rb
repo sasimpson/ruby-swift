@@ -8,7 +8,7 @@ class TestClient < Test::Unit::TestCase
     @url = "http://saio.local:8080/auth/v1.0"
     @user = "test:tester"
     @key = "testing"
-    @storage_url, @storage_token, @auth_token = get_auth(@url, @user, @key)
+    @storage_url, @auth_token = get_auth(@url, @user, @key)
   end
   
   def test_http_connection
@@ -22,7 +22,6 @@ class TestClient < Test::Unit::TestCase
   
   def test_get_auth
     assert_not_nil(@storage_url)
-    assert_not_nil(@storage_token)
     assert_not_nil(@auth_token)
   end
   

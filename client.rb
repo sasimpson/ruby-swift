@@ -90,7 +90,7 @@ def get_auth(url, user, key, snet=false)
   if snet:
     url.host = "snet-#{url.host}"
   end
-  [url.to_s, resp.header['x-storage-token'], resp.header['x-auth-token']]
+  [url.to_s, resp.header['x-auth-token']]
 end
 
 def get_account(url, token, marker=nil, limit=nil, prefix=nil, http_conn=nil, full_listing=false)
@@ -99,12 +99,34 @@ def get_account(url, token, marker=nil, limit=nil, prefix=nil, http_conn=nil, fu
     http_conn = http_connection(url)
   end
   parsed, conn = http_conn
+  if full_listing
+    rv = get_account(url, token, marker, limit, prefix, http_conn)
+    listing = rv[1]
+    while listing.length > 0
+      marker = listing[-1]['name']
+      listing = get_account(url, token, marker, limit, prefix, http_conn)[1]
+      if listing.length > 0
+        rv[1] << listing
+      end
+    end
+    return rv
+  end
   if parsed.query == nil
     parsed.query = "format=json"
   else
-    parsed.query = "#{parsed.query}&format=json"
+    parsed.query += "&format=json"
   end
-  conn.start
+  if marker:
+    parsed.query += "&marker=#{quote(marker.to_s)}"
+  end
+  if limit:
+    parsed.query += "&limit=#{quote(limit.to_s)}"
+  end
+  if prefix:
+    parsed.query += "&prefix=#{quote(prefix.to_s)}"
+  end
+  conn.start if conn.started?
+  puts parsed.request_uri
   resp = conn.get(parsed.request_uri, {'x-auth-token' => token})
   resp_headers = {}
   resp.header.each do |k,v|
@@ -170,7 +192,7 @@ def get_container(url, token, container, marker=nil, limit=nil, prefix=nil, deli
   if parsed.query == nil
     parsed.query = "format=json"
   else
-    parsed.query = "#{parsed.query}&format=json"
+    parsed.query += "&format=json"
   end
   conn.start
   parsed.path += "/#{quote(container)}"
