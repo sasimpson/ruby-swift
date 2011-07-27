@@ -33,6 +33,18 @@ class TestClient < Test::Unit::TestCase
     assert_not_nil(account[0]['x-account-container-count'])
     assert_not_nil(account[0]['content-length'])
     assert_not_nil(account[0]['date'])
+    
+    (1..20).each {|n| put_container(@storage_url, @auth_token, "test_#{n}")}
+    account = get_account(@storage_url, @auth_token, 'test_2', 1)
+    assert_equal('test_20', account[1][0]['name'], "check that marker pulls next container")
+    account = get_account(@storage_url, @auth_token, nil, 2)
+    assert_equal(2, account[1].length, "check that limit properly limits the amount of containers returned")
+    account = get_account(@storage_url, @auth_token, nil, nil, 'test_')
+    assert_equal('test_1', account[1][0]['name'], "check prefix works")
+    account = get_account(@storage_url, @auth_token, nil, nil, nil, nil, true)
+    assert_equal('test_1', account[1][0]['name'], "check that full listing returns all data")
+    assert_equal(20, account[1].length)
+    (1..20).each {|n| delete_container(@storage_url, @auth_token, "test_#{n}")}
   end
   
   def test_head_account
@@ -47,10 +59,13 @@ class TestClient < Test::Unit::TestCase
   def test_post_account
     post_account(@storage_url, @auth_token, {'x-account-meta-test-post-header' => 'test header'})
     account = get_account(@storage_url, @auth_token)
-    assert_equal('test header', account[0]['x-account-meta-test-post-header'])
+    assert_equal('test header', account[0]['x-account-meta-test-post-header'], "check that header is added to account")
     post_account(@storage_url, @auth_token, {'x-account-meta-test-post-header' => 'change test header'})
     account = get_account(@storage_url, @auth_token)
-    assert_equal('change test header', account[0]['x-account-meta-test-post-header'])
+    assert_equal('change test header', account[0]['x-account-meta-test-post-header'], "check that the account header is changed")
+    post_account(@storage_url, @auth_token, {'x-account-meta-test-post-header' => ''})
+    account = get_account(@storage_url, @auth_token)
+    assert_nil(account[0]['x-account-meta-test-post-header'], "check that the account header is removed.")
   end
   
   def test_get_container

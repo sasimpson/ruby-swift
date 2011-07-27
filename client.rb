@@ -83,22 +83,12 @@ def get_account(url, token, marker=nil, limit=nil, prefix=nil, http_conn=nil, fu
     end
     return rv
   end
-  if parsed.query == nil
-    parsed.query = "format=json"
-  else
-    parsed.query += "&format=json"
-  end
-  if marker:
-    parsed.query += "&marker=#{quote(marker.to_s)}"
-  end
-  if limit:
-    parsed.query += "&limit=#{quote(limit.to_s)}"
-  end
-  if prefix:
-    parsed.query += "&prefix=#{quote(prefix.to_s)}"
-  end
-  conn.start if conn.started?
-  puts parsed.request_uri
+  parsed.query ? parsed.query += "&format=json" : parsed.query = "format=json"
+  parsed.query += "&marker=#{quote(marker.to_s)}" if marker
+  parsed.query += "&limit=#{quote(limit.to_s)}" if limit
+  parsed.query += "&prefix=#{quote(prefix.to_s)}" if prefix
+
+  conn.start if not conn.started?
   resp = conn.get(parsed.request_uri, {'x-auth-token' => token})
   resp_headers = {}
   resp.header.each do |k,v|
@@ -160,12 +150,22 @@ def get_container(url, token, container, marker=nil, limit=nil, prefix=nil, deli
     http_conn = http_connection(url)
   end
   parsed, conn = http_conn
-  
-  if parsed.query == nil
-    parsed.query = "format=json"
-  else
-    parsed.query += "&format=json"
+  if full_listing
+    rv = get_account(url, token, marker, limit, prefix, http_conn)
+    listing = rv[1]
+    while listing.length > 0
+      marker = listing[-1]['name']
+      listing = get_account(url, token, marker, limit, prefix, http_conn)[1]
+      if listing.length > 0
+        rv[1] << listing
+      end
+    end
+    return rv
   end
+  parsed.query ? parsed.query += "&format=json" : parsed.query = "format=json"
+  parsed.query += "&marker=#{quote(marker.to_s)}" if marker
+  parsed.query += "&limit=#{quote(limit.to_s)}" if limit
+  parsed.query += "&prefix=#{quote(prefix.to_s)}" if prefix
   conn.start
   parsed.path += "/#{quote(container)}"
   resp = conn.get(parsed.request_uri, {'x-auth-token' => token})
@@ -255,4 +255,80 @@ def delete_container(url, token, container, http_conn=nil)
                 :http_path=>parsed.path, :http_status=>resp.code,
                 :http_reason=>resp.message)
   end
+end
+
+def get_object(url, token, container, name, http_conn=nil, resp_chunk_size=nil)
+  if not http_conn
+    http_conn = http_connection(url)
+  end
+  parsed, conn = http_conn
+
+  parsed.path += "/#{quote(container)}/#{quote(name)}"
+  conn.start if not conn.started?
+  resp = conn.get(parsed.request_uri, {'x-auth-token' => token})
+  if resp.code.to_i < 200 or resp.code.to_i > 300
+    raise ClientException.new('Container DELETE failed', :http_scheme=>parsed.scheme,
+                :http_host=>conn.address, :http_port=>conn.port,
+                :http_path=>parsed.path, :http_status=>resp.code,
+                :http_reason=>resp.message)
+  end
+  
+  if resp_chunk_size
+    #todo: finish this out.
+  else
+    object_body = resp.body  
+  end
+  resp_headers = {}
+  resp.header.each do |k,v|
+    resp_headers[k.downcase] = v
+  end
+  [resp_headers, object_body]
+end
+
+def head_object(url, token, container, name, http_conn=nil)
+  if not http_conn
+    http_conn = http_connection(url)
+  end
+  parsed, conn = http_conn
+
+  parsed.path += "/#{quote(container)}/#{quote(name)}"
+  conn.start if not conn.started?
+  resp = conn.head(parsed.request_uri, {'x-auth-token' => token})
+  if resp.code.to_i < 200 or resp.code.to_i > 300
+    raise ClientException.new('Container DELETE failed', :http_scheme=>parsed.scheme,
+                :http_host=>conn.address, :http_port=>conn.port,
+                :http_path=>parsed.path, :http_status=>resp.code,
+                :http_reason=>resp.message)
+  end
+  resp_headers = {}
+  resp.header.each do |k,v|
+    resp_headers[k.downcase] = v
+  end
+  resp_headers
+end
+
+def put_object(url, token=nil, container=nil, name=nil, contents=nil,
+               content_length=nil, etag=nil, chunk_size=65536,
+               content_type=nil, headers=nil, http_conn=nil, proxy=nil)
+  if not http_conn
+    http_conn = http_connection(url)
+  end
+  parsed, conn = http_conn              
+  parsed.path += "/#{quote(container)}" if container
+  parsed.path += "/#{quote(name)}" if name
+  headers['x-auth-token'] = token if token
+  headers['etag'] = etag if etag
+  if content_type is not nil
+    headers['content-length'] = content_length.to_s
+  else
+    headers.each do |k,v|
+      if n.downcase == 'content-length'
+        content_length = v.to_i
+      end
+    end
+  end
+  headers['content-type'] = content_type if content_type
+  headers['content-length'] = '0' if not contents
+  
+  
 end
