@@ -15,48 +15,20 @@ class ClientException < Exception
     @status  = params[:http_status]
     @reason  = params[:http_reason]
     @device  = params[:http_device]
-    
-    def to_s
-      a = @msg
-      b = ''
-      if @scheme
-        b += "#{@scheme}://"
-      end
-      if @host
-        b += @host
-      end
-      if @port
-        b +=  ":#{@port}"
-      end
-      if @path
-        b += @path
-      end
-      if @query
-        b += "?#{@query}"
-      end
-      if @status
-        if b
-          b = "#{b} #{@status}"
-        else
-          b = @status.to_s
-        end
-      end
-      if @reason
-        if b
-          b = "#{b} #{@reason}"
-        else
-          b = "- #{@reason}"
-        end
-      end
-      if @device
-        if b
-          b = "#{b}: device #{@device}"
-        else
-          b = "device #{@device}"
-        end
-      end
-      b ? "#{a} #{b}" : a
-    end
+  end
+      
+  def to_s
+    a = @msg
+    b = ''
+    b += "#{@scheme}://" if @scheme
+    b += @host if @host
+    b +=  ":#{@port}" if @port
+    b += @path if @path
+    b += "?#{@query}" if @query
+    b ? b = "#{b} #{@status}" : b = @status.to_s if @status
+    b ? b = "#{b} #{@reason}" : b = "- #{@reason}" if @reason
+    b ? b = "#{b}: device #{@device}" : b = "device #{@device}" if @device
+    b ? "#{a} #{b}" : a
   end
 end
 
