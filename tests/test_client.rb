@@ -15,18 +15,6 @@ class TestClient < Test::Unit::TestCase
     @file = File::open('/tmp/test.txt')
   end
   
-  # def teardown
-  #   # begin
-  #   #   (1..20).each {|n| delete_container(@storage_url, @auth_token, "test_get_account_#{n}")}
-  #   #   delete_container(@storage_url, @auth_token, 'test_get_container')
-  #   #   delete_container(@storage_url, @auth_token, 'test_put_container')
-  #   #   delete_container(@storage_url, @auth_token, 'test_head_container')
-  #   #   delete_container(@storage_url, @auth_token, 'test_post_container')
-  #   # catch ClientException
-  #   #   puts "ok."
-  #   # end
-  # end
-  
   def test_http_connection
     parsed, conn = http_connection("http://localhost:8080/auth/v1.0")
     assert_equal('http', parsed.scheme)
