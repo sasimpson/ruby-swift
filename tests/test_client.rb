@@ -9,7 +9,23 @@ class TestClient < Test::Unit::TestCase
     @user = "test:tester"
     @key = "testing"
     @storage_url, @auth_token = get_auth(@url, @user, @key)
+    @file = File::open('/tmp/test.txt', 'w')
+    @file.write((1..100).collect {('a'..'z').collect.join}.join)
+    @file.close
+    @file = File::open('/tmp/test.txt')
   end
+  
+  # def teardown
+  #   # begin
+  #   #   (1..20).each {|n| delete_container(@storage_url, @auth_token, "test_get_account_#{n}")}
+  #   #   delete_container(@storage_url, @auth_token, 'test_get_container')
+  #   #   delete_container(@storage_url, @auth_token, 'test_put_container')
+  #   #   delete_container(@storage_url, @auth_token, 'test_head_container')
+  #   #   delete_container(@storage_url, @auth_token, 'test_post_container')
+  #   # catch ClientException
+  #   #   puts "ok."
+  #   # end
+  # end
   
   def test_http_connection
     parsed, conn = http_connection("http://localhost:8080/auth/v1.0")
@@ -34,17 +50,17 @@ class TestClient < Test::Unit::TestCase
     assert_not_nil(account[0]['content-length'])
     assert_not_nil(account[0]['date'])
     
-    (1..20).each {|n| put_container(@storage_url, @auth_token, "test_#{n}")}
-    account = get_account(@storage_url, @auth_token, 'test_2', 1)
-    assert_equal('test_20', account[1][0]['name'], "check that marker pulls next container")
+    (1..20).each {|n| put_container(@storage_url, @auth_token, "test_get_account_#{n}")}
+    account = get_account(@storage_url, @auth_token, 'test_get_account_3', 1)
+    assert_equal('test_get_account_4', account[1][0]['name'], "check that marker pulls next container")
     account = get_account(@storage_url, @auth_token, nil, 2)
     assert_equal(2, account[1].length, "check that limit properly limits the amount of containers returned")
-    account = get_account(@storage_url, @auth_token, nil, nil, 'test_')
-    assert_equal('test_1', account[1][0]['name'], "check prefix works")
+    account = get_account(@storage_url, @auth_token, nil, nil, 'test_get_account_')
+    assert_equal('test_get_account_1', account[1][0]['name'], "check prefix works")
     account = get_account(@storage_url, @auth_token, nil, nil, nil, nil, true)
-    assert_equal('test_1', account[1][0]['name'], "check that full listing returns all data")
-    assert_equal(20, account[1].length)
-    (1..20).each {|n| delete_container(@storage_url, @auth_token, "test_#{n}")}
+    assert_equal('test_get_account_1', account[1][0]['name'], "check that full listing returns all data")
+    assert (account[1].length >= 20)
+    (1..20).each {|n| delete_container(@storage_url, @auth_token, "test_get_account_#{n}")}
   end
   
   def test_head_account
@@ -114,6 +130,20 @@ class TestClient < Test::Unit::TestCase
     delete_container(@storage_url, @auth_token, 'test_delete_container')
     assert_raises ClientException do
       container = head_container(@storage_url, @auth_token, 'test_delete_container')
+    end
+  end
+  
+  def test_object
+    put_container(@storage_url, @auth_token, 'test_object')
+    etag = put_object(@storage_url, @auth_token, 'test_object', 'test.txt', @file, nil, nil, 10, 'text/plain')
+    obj = head_object(@storage_url, @auth_token, 'test_object', 'test.txt')
+    assert_equal(etag, obj['etag'])
+    post_object(@storage_url, @auth_token, 'test_object', 'test.txt', {'x-object-meta-post-object-header' => 'test'})
+    obj = head_object(@storage_url, @auth_token, 'test_object', 'test.txt')
+    assert_equal('test', obj['x-object-meta-post-object-header'])
+    delete_object(@storage_url, @auth_token, 'test_object', 'test.txt')
+    assert_raises ClientException do 
+      obj = head_object(@storage_url, @auth_token, 'test_object', 'test.txt')
     end
   end
 end

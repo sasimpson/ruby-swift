@@ -32,6 +32,27 @@ class ClientException < Exception
   end
 end
 
+class ChunkedConnectionWrapper
+  def initialize(data, chunk_size)
+    @size = chunk_size
+    if data.respond_to? :read
+      @file = data
+    end
+  end
+  
+  def read(foo)
+    if @file
+      @file.read(@size)
+    end
+  end
+  def eof!
+    @file.eof!
+  end
+  def eof?
+    @file.eof?
+  end
+end
+
 def quote(value)
   URI.encode(value)
 end
@@ -267,7 +288,7 @@ def get_object(url, token, container, name, http_conn=nil, resp_chunk_size=nil)
   conn.start if not conn.started?
   resp = conn.get(parsed.request_uri, {'x-auth-token' => token})
   if resp.code.to_i < 200 or resp.code.to_i > 300
-    raise ClientException.new('Container DELETE failed', :http_scheme=>parsed.scheme,
+    raise ClientException.new('Object GET failed', :http_scheme=>parsed.scheme,
                 :http_host=>conn.address, :http_port=>conn.port,
                 :http_path=>parsed.path, :http_status=>resp.code,
                 :http_reason=>resp.message)
@@ -295,7 +316,7 @@ def head_object(url, token, container, name, http_conn=nil)
   conn.start if not conn.started?
   resp = conn.head(parsed.request_uri, {'x-auth-token' => token})
   if resp.code.to_i < 200 or resp.code.to_i > 300
-    raise ClientException.new('Container DELETE failed', :http_scheme=>parsed.scheme,
+    raise ClientException.new('Object HEAD failed', :http_scheme=>parsed.scheme,
                 :http_host=>conn.address, :http_port=>conn.port,
                 :http_path=>parsed.path, :http_status=>resp.code,
                 :http_reason=>resp.message)
@@ -309,7 +330,7 @@ end
 
 def put_object(url, token=nil, container=nil, name=nil, contents=nil,
                content_length=nil, etag=nil, chunk_size=65536,
-               content_type=nil, headers=nil, http_conn=nil, proxy=nil)
+               content_type=nil, headers={}, http_conn=nil, proxy=nil)
   if not http_conn
     http_conn = http_connection(url)
   end
@@ -318,17 +339,71 @@ def put_object(url, token=nil, container=nil, name=nil, contents=nil,
   parsed.path += "/#{quote(name)}" if name
   headers['x-auth-token'] = token if token
   headers['etag'] = etag if etag
-  if content_type is not nil
+  if content_length != nil
     headers['content-length'] = content_length.to_s
   else
     headers.each do |k,v|
-      if n.downcase == 'content-length'
+      if k.downcase == 'content-length'
         content_length = v.to_i
       end
     end
   end
   headers['content-type'] = content_type if content_type
-  headers['content-length'] = '0' if not contents
-  
-  
+  headers['content-length'] = '0' if not contents  
+  if contents.respond_to? :read
+    request = Net::HTTP::Put.new(parsed.request_uri, headers)
+    chunked = ChunkedConnectionWrapper.new(contents, chunk_size)
+    if content_length == nil
+      request['Transfer-Encoding'] = 'chunked'
+      request.delete('content-length')
+    end
+    request.body_stream = chunked
+    resp = conn.start do |http|
+      http.request(request)
+    end
+  else
+    resp = conn.put(parsed.request_uri, contents, headers)
+  end
+  if resp.code.to_i < 200 or resp.code.to_i > 300
+    raise ClientException.new('Object PUT failed', :http_scheme=>parsed.scheme,
+                :http_host=>conn.address, :http_port=>conn.port,
+                :http_path=>parsed.path, :http_status=>resp.code,
+                :http_reason=>resp.message)
+  end
+  resp.header['etag']
+end
+
+def post_object(url, token=nil, container=nil, name=nil, headers={}, http_conn=nil)
+  if not http_conn
+     http_conn = http_connection(url)
+  end
+  parsed, conn = http_conn
+  parsed.path += "/#{quote(container)}" if container
+  parsed.path += "/#{quote(name)}" if name
+  headers['x-auth-token'] = token if token
+  resp = conn.post(parsed.request_uri, nil, headers)
+  if resp.code.to_i < 200 or resp.code.to_i > 300
+    raise ClientException.new('Object POST failed', :http_scheme=>parsed.scheme,
+                :http_host=>conn.address, :http_port=>conn.port,
+                :http_path=>parsed.path, :http_status=>resp.code,
+                :http_reason=>resp.message)
+  end
+end
+
+def delete_object(url, token=nil, container=nil, name=nil, http_conn=nil, headers={}, proxy=nil)
+  if not http_conn
+    http_conn = http_connection(url)
+  end
+  parsed, conn = http_conn
+  conn.start
+  parsed.path += "/#{quote(container)}" if container
+  parsed.path += "/#{quote(name)}" if name
+  headers['x-auth-token'] = token if token
+  resp = conn.delete(parsed.request_uri, headers)
+  if resp.code.to_i < 200 or resp.code.to_i > 300
+    raise ClientException.new('Object DELETE failed', :http_scheme=>parsed.scheme,
+                :http_host=>conn.address, :http_port=>conn.port,
+                :http_path=>parsed.path, :http_status=>resp.code,
+                :http_reason=>resp.message)
+  end
 end
