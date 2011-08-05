@@ -107,11 +107,48 @@ class Connection
   end
   
 private
-  def _retry(reset, func, args=nil, opts={})
-    @url, @token = self.get_auth() if !@url or !@token
-    @http_conn = self.http_connection() if !@http_conn
-    args.unshift(@url, @token)
-    Connection.method(func).call(*args)
+  def _retry(reset, func, args=nil)
+    @attempts = 0
+    backoff = @starting_backoff
+    
+    while @attempts < @retries 
+      @attempts += 1
+      begin
+        if !@url or !@token
+          @url, @token = self.get_auth()
+          @http_conn = nil
+        end
+        @http_conn = self.http_connection() if !@http_conn
+        args.unshift(@url, @token)
+        Connection.method(func).call(*args)
+      rescue HTTPException
+        if @attempts > @retries
+          raise
+        end
+        @http_conn = nil
+      rescue ClientException, err
+        if @attempts > @retries
+          raise
+        end
+        if err.status == 401
+          @url = @token = nil
+          if @attempts > 1
+            raise
+          end
+        elsif err.status == 408
+          @http_conn = nil
+        elsif err.status >= 500 and err.status <= 599
+          nil
+        else
+          raise
+        end
+      end
+      sleep(backoff)
+      backoff *= 2
+      if reset_func
+        
+      end
+    end
   end
 
 public
