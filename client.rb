@@ -57,7 +57,40 @@ def quote(value)
   URI.encode(value)
 end
 
-
+class Query
+  def initialize(url_params)
+    if url_params
+      @params = Query.from_url_params(url_params)
+    else
+      @params = {}
+    end
+  end
+  def to_s
+    to_url_params
+  end
+  def to_url_params
+    elements = []
+    @params.each_pair {|k,v| elements << "#{k}=#{v}"}
+    elements.join('&')
+  end
+  def self.from_url_params(url_params)
+    result = {}
+    url_params.split('&').each do |element|
+      element = element.split('=')
+      result[element[0]] = element[1]
+    end
+    result
+  end
+  def has_key?(key)
+    @params.has_key? key
+  end
+  def add(key, value)
+    @params[key] = value
+  end
+  def delete(key)
+    @params.delete(key)
+  end
+end
 
 class Connection
   def initialize(authurl, user, key, retries=5, preauthurl=nil, preauthtoken=nil, snet=false, starting_backoff=1)
@@ -74,21 +107,14 @@ class Connection
   end
   
 private
-  def retry(reset, func, args, opts)
-    puts "retry"
+  def _retry(reset, func, args=nil, opts={})
     @url, @token = self.get_auth() if !@url or !@token
     @http_conn = self.http_connection() if !@http_conn
-    opts[:http_conn] = @http_conn if @http_conn
-    func.call(@url, @token, opts)
+    args.unshift(@url, @token)
+    Connection.method(func).call(*args)
   end
 
 public
-  # def head_account
-  #   puts "head_account"
-  #   ha = head_account
-  #   self.retry(nil, ha, nil, opts)
-  # end
-  
   def self.http_connection(url)
     parsed = URI::parse(url)
     conn = Net::HTTP.new(parsed.host, parsed.port)
@@ -105,12 +131,16 @@ public
   end
   
   def http_connection
-    Connection.http_connection(@url)
+    if !@http_conn
+      @http_conn = Connection.http_connection(@url)
+    else
+      @http_conn
+    end
   end
   
   def self.get_auth(url, user, key, snet=false)
     parsed, conn = http_connection(url)
-    conn.start
+    conn.start if !conn.started?
     resp = conn.get(parsed.request_uri, 
       { "x-auth-user" => user, "x-auth-key" => key })
 
@@ -125,7 +155,7 @@ public
   end
   
   def get_auth
-    Connection.get_auth(@authurl, @user, @key, @snet)
+    @url, @token = Connection.get_auth(@authurl, @user, @key, @snet)
   end
   
   def self.get_account(url, token, marker=nil, limit=nil, prefix=nil, 
@@ -134,7 +164,8 @@ public
     if not http_conn
       http_conn = http_connection(url)
     end
-    parsed, conn = http_conn
+    parsed = http_conn[0].clone
+    conn = http_conn[1]
     if full_listing
       rv = get_account(url, token, marker, limit, prefix, http_conn)
       listing = rv[1]
@@ -147,12 +178,13 @@ public
       end
       return rv
     end
-    parsed.query ? parsed.query += "&format=json" : parsed.query = "format=json"
-    parsed.query += "&marker=#{quote(marker.to_s)}" if marker
-    parsed.query += "&limit=#{quote(limit.to_s)}" if limit
-    parsed.query += "&prefix=#{quote(prefix.to_s)}" if prefix
-
-    conn.start if not conn.started?
+    query = Query.new(parsed.query)
+    query.add('format', 'json')
+    query.add('marker', quote(marker.to_s)) if marker
+    query.add('limit', quote(limit.to_s)) if limit
+    query.add('prefix', quote(prefix.to_s)) if prefix
+    parsed.query = query.to_url_params
+    conn.start if !conn.started?
     resp = conn.get(parsed.request_uri, {'x-auth-token' => token})
     resp_headers = {}
     resp.header.each do |k,v|
@@ -170,13 +202,18 @@ public
       [resp_headers, JSON.parse(resp.body)]
     end
   end
-
+  
+  def get_account(marker=nil, limit=nil, prefix=nil, full_listing=false)
+    _retry(nil, :get_account, [marker, limit, prefix, @http_conn, full_listing])
+  end
+      
   def self.head_account(url, token, http_conn=nil)
     if not http_conn
       http_conn = http_connection(url)
     end
-    parsed, conn = http_conn
-    conn.start
+    parsed = http_conn[0].clone
+    conn = http_conn[1]
+    conn.start if !conn.started?
     resp = conn.head(parsed.request_uri, {'x-auth-token' => token})
     resp_headers = {}
     resp.header.each do |k,v|
@@ -190,14 +227,19 @@ public
     end
     resp_headers
   end
+  
+  def head_account
+    _retry(nil, :head_account, [@http_conn])
+  end
 
   def self.post_account(url, token, headers, http_conn=nil)
     if not http_conn
       http_conn = http_connection(url)
     end
-    parsed, conn = http_conn
+    parsed = http_conn[0].clone
+    conn = http_conn[1]
     headers['x-auth-token'] = token
-    conn.start
+    conn.start if !conn.started?
     resp = conn.post(parsed.request_uri, nil, headers)
     resp.body
     if resp.code.to_i < 200 or resp.code.to_i > 300
@@ -207,6 +249,9 @@ public
               :http_reason=>resp.message)
     end
   end
+  def post_account(headers=nil)
+    _retry(nil, :head_account, [headers, @http_conn])
+  end
 
   def self.get_container(url, token, container, marker=nil, limit=nil, 
         prefix=nil, delimiter=nil, http_conn=nil, full_listing=nil)
@@ -214,7 +259,9 @@ public
     if not http_conn
       http_conn = http_connection(url)
     end
-    parsed, conn = http_conn
+    parsed = http_conn[0].clone
+    conn = http_conn[1]
+    
     if full_listing
       rv = get_account(url, token, marker, limit, prefix, http_conn)
       listing = rv[1]
@@ -227,11 +274,13 @@ public
       end
       return rv
     end
-    parsed.query ? parsed.query += "&format=json" : parsed.query = "format=json"
-    parsed.query += "&marker=#{quote(marker.to_s)}" if marker
-    parsed.query += "&limit=#{quote(limit.to_s)}" if limit
-    parsed.query += "&prefix=#{quote(prefix.to_s)}" if prefix
-    conn.start
+    query = Query.new(parsed.query)
+    query.add('format', 'json')
+    query.add('marker', quote(marker.to_s)) if marker
+    query.add('limit', quote(limit.to_s)) if limit
+    query.add('prefix', quote(prefix.to_s)) if prefix
+    parsed.query = query.to_url_params
+    conn.start if !conn.started?
     parsed.path += "/#{quote(container)}"
     resp = conn.get(parsed.request_uri, {'x-auth-token' => token})
     resp_headers = {}
@@ -250,13 +299,19 @@ public
       [resp_headers, JSON.parse(resp.body())]
     end
   end
+  
+  def get_container(container, marker=nil, limit=nil, prefix=nil, delimiter=nil, full_listing=nil)
+    _retry(nil, :get_container, [container, marker, limit, prefix, delimiter, full_listing])
+  end
 
   def self.head_container(url, token, container, http_conn=nil)
     if not http_conn
       http_conn = http_connection(url)
     end
-    parsed, conn = http_conn
-    conn.start
+    parsed = http_conn[0].clone
+    conn = http_conn[1]
+    
+    conn.start if !conn.started?
     parsed.path += "/#{quote(container)}"
     resp = conn.head(parsed.request_uri, {'x-auth-token' => token})
     resp_headers = {}
@@ -271,15 +326,22 @@ public
     end
     resp_headers
   end
+  
+  def head_container(container)
+    _retry(nil, :head_container, [container, @http_conn])
+  end
 
   def self.put_container(url, token, container, headers={}, http_conn=nil)
     if not http_conn
       http_conn = http_connection(url)
     end
-    parsed, conn = http_conn
-    conn.start
+    parsed = http_conn[0].clone
+    conn = http_conn[1]
+    
+    conn.start if !conn.started?
     parsed.path += "/#{quote(container)}"
     headers['x-auth-token'] = token
+    # headers['content-length'] = 0
     resp = conn.put(parsed.request_uri, nil, headers)
     if resp.code.to_i < 200 or resp.code.to_i > 300
       raise ClientException.new('Container PUT failed', :http_scheme=>parsed.scheme,
@@ -288,13 +350,19 @@ public
                   :http_reason=>resp.message)  
     end
   end
+  
+  def put_container(container, headers={})
+    _retry(nil, :put_container, [container, headers, @http_conn])
+  end
 
   def self.post_container(url, token, container, headers={}, http_conn=nil)
     if not http_conn
       http_conn = http_connection(url)
     end
-    parsed, conn = http_conn
-    conn.start
+    parsed = http_conn[0].clone
+    conn = http_conn[1]
+    
+    conn.start if !conn.started?
     parsed.path += "/#{quote(container)}"
     headers['x-auth-token'] = token
     resp = conn.post(parsed.request_uri, nil, headers)
@@ -305,13 +373,19 @@ public
                   :http_reason=>resp.message)
     end
   end
+  
+  def post_container(container, headers={})
+    _retry(nil, :post_container, [container, headers])
+  end
 
   def self.delete_container(url, token, container, http_conn=nil)
     if not http_conn
       http_conn = http_connection(url)
     end
-    parsed, conn = http_conn
-    conn.start
+    parsed = http_conn[0].clone
+    conn = http_conn[1]
+    
+    conn.start if !conn.started?
     parsed.path += "/#{quote(container)}"
     resp = conn.delete(parsed.request_uri, {'x-auth-token' => token})
     if resp.code.to_i < 200 or resp.code.to_i > 300
@@ -321,12 +395,18 @@ public
                   :http_reason=>resp.message)
     end
   end
+  
+  def delete_container(container)
+    _retry(nil, :delete_container, [container])
+  end
 
   def self.get_object(url, token, container, name, http_conn=nil, resp_chunk_size=nil)
     if not http_conn
       http_conn = http_connection(url)
     end
-    parsed, conn = http_conn
+    parsed = http_conn[0].clone
+    conn = http_conn[1]
+    
 
     parsed.path += "/#{quote(container)}/#{quote(name)}"
     conn.start if not conn.started?
@@ -354,7 +434,9 @@ public
     if not http_conn
       http_conn = http_connection(url)
     end
-    parsed, conn = http_conn
+    parsed = http_conn[0].clone
+    conn = http_conn[1]
+    
 
     parsed.path += "/#{quote(container)}/#{quote(name)}"
     conn.start if not conn.started?
@@ -378,7 +460,9 @@ public
     if not http_conn
       http_conn = http_connection(url)
     end
-    parsed, conn = http_conn              
+    parsed = http_conn[0].clone
+    conn = http_conn[1]
+                  
     parsed.path += "/#{quote(container)}" if container
     parsed.path += "/#{quote(name)}" if name
     headers['x-auth-token'] = token if token
@@ -421,7 +505,9 @@ public
     if not http_conn
        http_conn = http_connection(url)
     end
-    parsed, conn = http_conn
+    parsed = http_conn[0].clone
+    conn = http_conn[1]
+    
     parsed.path += "/#{quote(container)}" if container
     parsed.path += "/#{quote(name)}" if name
     headers['x-auth-token'] = token if token
@@ -438,8 +524,10 @@ public
     if not http_conn
       http_conn = http_connection(url)
     end
-    parsed, conn = http_conn
-    conn.start
+    parsed = http_conn[0].clone
+    conn = http_conn[1]
+    
+    conn.start if !conn.started?
     parsed.path += "/#{quote(container)}" if container
     parsed.path += "/#{quote(name)}" if name
     headers['x-auth-token'] = token if token

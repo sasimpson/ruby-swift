@@ -121,7 +121,7 @@ class TestClient < Test::Unit::TestCase
     end
   end
   
-  def test_object
+  def test_object_opertations
     Connection.put_container(@storage_url, @auth_token, 'test_object')
     etag = Connection.put_object(@storage_url, @auth_token, 'test_object', 'test.txt', @file, nil, nil, 10, 'text/plain')
     obj = Connection.head_object(@storage_url, @auth_token, 'test_object', 'test.txt')
@@ -133,5 +133,19 @@ class TestClient < Test::Unit::TestCase
     assert_raises ClientException do 
       obj = Connection.head_object(@storage_url, @auth_token, 'test_object', 'test.txt')
     end
+    Connection.delete_container(@storage_url, @auth_token, 'test_object')
+  end
+  
+  def test_oop_access
+    swift = Connection.new(@url, @user, @key)
+    (1..20).each {|n| swift.put_container("test_account_oop_#{n}")}
+    account = swift.head_account
+    assert_equal("20", account['x-account-container-count'], "head account returns correct number for x-account-container-count")
+    account = swift.get_account(nil, nil, 'test_account_oop')
+    assert_equal(20, account[1].length, "get returns the correct number of containers")
+    swift.post_container('test_account_oop_1', {'x-container-meta-foo'=>'testing'})
+    container = swift.head_container('test_account_oop_1')
+    assert_equal('testing', container['x-container-meta-foo'], "post correctly set x-container-meta-foo")
+    (1..20).each {|n| swift.delete_container("test_account_oop_#{n}")}
   end
 end
