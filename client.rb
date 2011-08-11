@@ -113,40 +113,42 @@ private
     
     while @attempts < @retries 
       @attempts += 1
+      # puts args.length
+      # puts args
+      
       begin
         if !@url or !@token
           @url, @token = self.get_auth()
           @http_conn = nil
         end
         @http_conn = self.http_connection() if !@http_conn
-        args.unshift(@url, @token)
-        Connection.method(func).call(*args)
-      rescue HTTPException
+        return Connection.method(func).call(@url, @token, *args)
+      rescue Net::HTTPExceptions
         if @attempts > @retries
           raise
         end
         @http_conn = nil
-      rescue ClientException, err
+      rescue ClientException => err
         if @attempts > @retries
           raise
         end
-        if err.status == 401
+        if err.status.to_i == 401
           @url = @token = nil
           if @attempts > 1
             raise
           end
-        elsif err.status == 408
+        elsif err.status.to_i == 408
           @http_conn = nil
-        elsif err.status >= 500 and err.status <= 599
-          nil
+        elsif err.status.to_i >= 500 and err.status.to_i <= 599
+          return nil
         else
           raise
         end
       end
       sleep(backoff)
       backoff *= 2
-      if reset_func
-        
+      if reset
+        reset.call(args)
       end
     end
   end
@@ -467,6 +469,10 @@ public
     [resp_headers, object_body]
   end
 
+  def get_object(container, name, resp_chunk_size=nil)
+    _retry(nil, :get_object, [container, name, resp_chunk_size])
+  end
+    
   def self.head_object(url, token, container, name, http_conn=nil)
     if not http_conn
       http_conn = http_connection(url)
@@ -489,6 +495,10 @@ public
       resp_headers[k.downcase] = v
     end
     resp_headers
+  end
+  
+  def head_object(container, name)
+    _retry(nil, :head_object, [container, name])
   end
 
   def self.put_object(url, token=nil, container=nil, name=nil, contents=nil,
@@ -537,7 +547,22 @@ public
     end
     resp.header['etag']
   end
-
+  
+  def put_object(container, obj, contents, content_length=nil, etag=nil, chunk_size=65536, content_type=nil, headers={})
+    
+    _default_reset = Proc.new do |args|
+      raise ClientException("put_object(#{container}, #{obj}, ...) failure and no ability to reset contents for reupload.")
+    end
+    reset_func = _default_reset
+    if (contents.respond_to? :seek) and (contents.respond_to? :tell)
+      orig_pos = contents.tell
+      reset_func = Proc.new {|a| contents.seek(orig_pos)}
+    elsif !contents
+      reset_func = Proc.new {|a| nil }
+    end
+    _retry(reset_func, :put_object, [container, obj, contents, content_length, etag, chunk_size, content_type, headers])
+  end
+                 
   def self.post_object(url, token=nil, container=nil, name=nil, headers={}, http_conn=nil)
     if not http_conn
        http_conn = http_connection(url)
@@ -556,7 +581,11 @@ public
                   :http_reason=>resp.message)
     end
   end
-
+  
+  def post_object(container, name, headers={})
+    _retry(nil, :head_object, [container, name, headers])
+  end
+  
   def self.delete_object(url, token=nil, container=nil, name=nil, http_conn=nil, headers={}, proxy=nil)
     if not http_conn
       http_conn = http_connection(url)
@@ -575,5 +604,9 @@ public
                   :http_path=>parsed.path, :http_status=>resp.code,
                   :http_reason=>resp.message)
     end
+  end
+  
+  def delete_object(container, name, headers={})
+    _retry(nil, :delete_object, [container, name, headers])
   end
 end
