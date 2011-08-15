@@ -147,5 +147,10 @@ class TestClient < Test::Unit::TestCase
     container = swift.head_container('test_account_oop_1')
     assert_equal('testing', container['x-container-meta-foo'], "post correctly set x-container-meta-foo")
     (1..20).each {|n| swift.delete_container("test_account_oop_#{n}")}
+    swift.put_container('test_object_oop')
+    @file.seek 0
+    swift.put_object('test_object_oop', 'test.txt', @file)
+    obj = swift.head_object('test_object_oop', 'test.txt')
+    assert_equal(@file.stat.size, obj['content-length'])
   end
 end
